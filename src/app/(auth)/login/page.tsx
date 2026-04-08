@@ -38,14 +38,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-mono font-bold" style={{
-            background: 'linear-gradient(135deg, #39d2c0, #bc8cff)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-          }}>
-            Beacon
-          </h1>
-          <p className="text-sm mt-1" style={{ color: '#8b949e' }}>v2 — Agent Dashboard</p>
+          <img src="/logo-transparent.png" alt="Prometheus Beacon" className="mx-auto mb-4" style={{ maxWidth: '560px' }} />
         </div>
 
         {/* Card */}

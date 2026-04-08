@@ -103,19 +103,9 @@ export default function Sidebar() {
       }}
     >
       {/* Logo */}
-      <div className="px-4 py-4 border-b" style={{ borderColor: '#30363d' }}>
+      <div className="px-3 py-3 border-b" style={{ borderColor: '#30363d' }}>
         <Link href="/" className="block">
-          <span
-            className="text-base font-mono font-bold leading-tight block"
-            style={{
-              background: 'linear-gradient(135deg, #39d2c0, #bc8cff)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-            }}
-          >
-            Beacon
-          </span>
-          <span className="text-xs" style={{ color: '#8b949e' }}>Prometheus Dashboard</span>
+          <img src="/logo-transparent.png" alt="Beacon" style={{ width: '100%' }} />
         </Link>
       </div>
 
