@@ -5,7 +5,7 @@ export const sessionOptions: SessionOptions = {
   password: process.env.SESSION_SECRET || 'set-SESSION_SECRET-env-var-before-running',
   cookieName: 'mc-session',
   cookieOptions: {
-    secure: process.env.NODE_ENV === 'production',
+    secure: false,
     maxAge: 60 * 60 * 24 * 7,
   },
 };
