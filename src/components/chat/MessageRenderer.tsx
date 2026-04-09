@@ -1,6 +1,7 @@
 'use client';
 
 import React, { memo, useState } from 'react';
+import Markdown from 'react-markdown';
 import { ChevronDown, ChevronRight, Wrench, AlertCircle, Brain } from 'lucide-react';
 
 interface ContentPart {
@@ -29,9 +30,37 @@ interface ChatMessage {
 
 const TextBlock = memo(function TextBlock({ text }: { text: string }) {
   return (
-    <p className="whitespace-pre-wrap text-sm leading-relaxed" style={{ color: '#e6edf3' }}>
-      {text}
-    </p>
+    <div className="text-sm leading-relaxed prose-invert max-w-none" style={{ color: '#e6edf3' }}>
+      <Markdown
+        components={{
+          p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+          strong: ({ children }) => <strong style={{ color: '#e6edf3', fontWeight: 600 }}>{children}</strong>,
+          em: ({ children }) => <em style={{ color: '#8b949e' }}>{children}</em>,
+          h3: ({ children }) => <h3 className="text-sm font-semibold mt-3 mb-1" style={{ color: '#e6edf3' }}>{children}</h3>,
+          h2: ({ children }) => <h2 className="text-base font-semibold mt-3 mb-1" style={{ color: '#e6edf3' }}>{children}</h2>,
+          ul: ({ children }) => <ul className="list-disc pl-4 mb-2 space-y-0.5">{children}</ul>,
+          ol: ({ children }) => <ol className="list-decimal pl-4 mb-2 space-y-0.5">{children}</ol>,
+          li: ({ children }) => <li className="text-sm">{children}</li>,
+          code: ({ children, className }) => {
+            const isBlock = className?.includes('language-');
+            if (isBlock) {
+              return (
+                <pre className="text-xs font-mono p-3 rounded-lg overflow-auto my-2" style={{ background: '#0d1117', border: '1px solid #30363d' }}>
+                  <code style={{ color: '#8b949e' }}>{children}</code>
+                </pre>
+              );
+            }
+            return <code className="text-xs font-mono px-1 py-0.5 rounded" style={{ background: '#21262d', color: '#79c0ff' }}>{children}</code>;
+          },
+          a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer" style={{ color: '#58a6ff' }}>{children}</a>,
+          table: ({ children }) => <table className="text-xs border-collapse my-2 w-full" style={{ border: '1px solid #30363d' }}>{children}</table>,
+          th: ({ children }) => <th className="px-2 py-1 text-left font-semibold" style={{ background: '#161b22', borderBottom: '1px solid #30363d', color: '#8b949e' }}>{children}</th>,
+          td: ({ children }) => <td className="px-2 py-1" style={{ borderBottom: '1px solid #21262d' }}>{children}</td>,
+        }}
+      >
+        {text}
+      </Markdown>
+    </div>
   );
 });
 

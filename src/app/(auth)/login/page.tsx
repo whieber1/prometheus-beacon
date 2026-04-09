@@ -108,7 +108,10 @@ export default function LoginPage() {
           </form>
         </div>
 
-        <p className="text-center text-xs mt-4" style={{ color: '#30363d' }}>
+        <p className="text-center text-xs mt-4" style={{ color: '#484f58' }}>
+          First time? Check the terminal for your auto-generated password.
+        </p>
+        <p className="text-center text-xs mt-1" style={{ color: '#30363d' }}>
           Prometheus · Beacon
         </p>
       </div>

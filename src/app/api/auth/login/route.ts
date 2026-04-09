@@ -6,8 +6,14 @@ export async function POST(req: NextRequest) {
 
   const validUsername = process.env.MC_USERNAME;
   const validPassword = process.env.MC_PASSWORD;
+
   if (!validUsername || !validPassword) {
-    return NextResponse.json({ error: 'Server not configured — set MC_USERNAME and MC_PASSWORD env vars' }, { status: 500 });
+    // Should never happen — server.ts auto-generates credentials on startup.
+    // If it does, the user started Next.js directly instead of via server.ts.
+    return NextResponse.json(
+      { error: 'Auth not configured. Start with: npm run dev (not next dev)' },
+      { status: 500 },
+    );
   }
 
   if (username === validUsername && password === validPassword) {

@@ -1,7 +1,58 @@
 import { config as loadDotenv } from 'dotenv';
 import { resolve } from 'path';
+import { randomBytes } from 'crypto';
+import { existsSync, readFileSync, appendFileSync, writeFileSync } from 'fs';
+
 // Load .env.local before anything else (override=true so it wins over system env)
-loadDotenv({ path: resolve(process.cwd(), '.env.local'), override: true });
+const envLocalPath = resolve(process.cwd(), '.env.local');
+loadDotenv({ path: envLocalPath, override: true });
+
+// ─── Auto-generate auth credentials if not configured ──────────────────────
+function ensureAuth(): { generated: boolean; username: string; password: string } {
+  const existing = {
+    username: process.env.MC_USERNAME,
+    password: process.env.MC_PASSWORD,
+    secret: process.env.SESSION_SECRET,
+  };
+
+  if (existing.username && existing.password && existing.secret) {
+    return { generated: false, username: existing.username, password: existing.password };
+  }
+
+  // Generate missing values
+  const username = existing.username || 'admin';
+  const password = existing.password || randomBytes(6).toString('base64url'); // e.g. "kX7m2pQ1Rw"
+  const secret = existing.secret || randomBytes(32).toString('hex');
+
+  // Build lines to append
+  const lines: string[] = [];
+  if (!existing.username) lines.push(`MC_USERNAME=${username}`);
+  if (!existing.password) lines.push(`MC_PASSWORD=${password}`);
+  if (!existing.secret) lines.push(`SESSION_SECRET=${secret}`);
+
+  // Write to .env.local
+  try {
+    if (existsSync(envLocalPath)) {
+      const content = readFileSync(envLocalPath, 'utf-8');
+      const newContent = content.trimEnd() + '\n\n# Auto-generated on first run\n' + lines.join('\n') + '\n';
+      writeFileSync(envLocalPath, newContent);
+    } else {
+      const content = '# Beacon Dashboard — auto-generated config\n\n' + lines.join('\n') + '\n';
+      writeFileSync(envLocalPath, content, { mode: 0o600 });
+    }
+  } catch (err) {
+    console.warn('[Auth] Could not write .env.local:', (err as Error).message);
+  }
+
+  // Set in current process
+  process.env.MC_USERNAME = username;
+  process.env.MC_PASSWORD = password;
+  process.env.SESSION_SECRET = secret;
+
+  return { generated: true, username, password };
+}
+
+const authResult = ensureAuth();
 
 import { createServer } from 'http';
 import { parse } from 'url';
@@ -126,9 +177,27 @@ app.prepare().then(() => {
   });
 
   server.listen(port, () => {
-    console.log(`\n> Mission Control v2 ready on http://localhost:${port}`);
-    console.log(`> WebSocket server at ws://localhost:${port}/ws`);
-    console.log(`> Gateway bridge connecting to ${process.env.PROMETHEUS_GATEWAY_URL}`);
-    console.log(`> Environment: ${dev ? 'development' : 'production'}\n`);
+    console.log('');
+    console.log('  ╔══════════════════════════════════════════════╗');
+    console.log('  ║         Prometheus Beacon · Mission Control  ║');
+    console.log('  ╚══════════════════════════════════════════════╝');
+    console.log('');
+    console.log(`  → Dashboard:   http://localhost:${port}`);
+    console.log(`  → WebSocket:   ws://localhost:${port}/ws`);
+    console.log(`  → Environment: ${dev ? 'development' : 'production'}`);
+
+    if (authResult.generated) {
+      console.log('');
+      console.log('  ┌──────────────────────────────────────────────┐');
+      console.log('  │  🔑 First-run credentials (saved to .env.local):');
+      console.log(`  │     Username: ${authResult.username}`);
+      console.log(`  │     Password: ${authResult.password}`);
+      console.log('  │');
+      console.log('  │  Change these in .env.local and restart.');
+      console.log('  └──────────────────────────────────────────────┘');
+    } else {
+      console.log(`  → Auth:        ${process.env.MC_USERNAME} (configured)`);
+    }
+    console.log('');
   });
 });

@@ -19,6 +19,22 @@ import type {
   PrometheusAgentState,
 } from '@/server/gateway/types';
 
+/**
+ * Extract clean text from Python repr content blocks.
+ * Converts "[TextBlock(type='text', text='Hello')]" → "Hello"
+ * Passes through plain strings unchanged.
+ */
+function extractTextFromRepr(raw: string): string {
+  if (!raw.startsWith('[') || !raw.includes('TextBlock')) return raw;
+  // Match text='...' or text="..." inside TextBlock(...)
+  const parts: string[] = [];
+  const singleQuote = raw.matchAll(/TextBlock\(type='text',\s*text='((?:[^'\\]|\\.)*)'\)/g);
+  for (const m of singleQuote) parts.push(m[1].replace(/\\'/g, "'").replace(/\\n/g, '\n'));
+  const doubleQuote = raw.matchAll(/TextBlock\(type='text',\s*text="((?:[^"\\]|\\.)*)"\)/g);
+  for (const m of doubleQuote) parts.push(m[1].replace(/\\"/g, '"').replace(/\\n/g, '\n'));
+  return parts.length > 0 ? parts.join('\n') : raw;
+}
+
 export type ActivityCategory =
   | 'message'
   | 'tool'
@@ -239,11 +255,12 @@ export const useGatewayStore = create<GatewayStore>((set, get) => ({
       }
 
       case 'chat_message': {
+        const rawContent = (p.content as string) || '';
         const msg = {
           id: (p.message_id as string) || `msg-${Date.now()}`,
           session_id: (p.session_id as string) || '',
           role: (p.role as string) || 'assistant',
-          content: (p.content as string) || '',
+          content: extractTextFromRepr(rawContent),
           timestamp: event.timestamp,
         };
         set((s) => ({

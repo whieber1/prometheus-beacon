@@ -7,6 +7,7 @@ import { TRPCError } from '@trpc/server';
 
 const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT ?? path.join(os.homedir(), '.prometheus');
 const MAX_FILE_SIZE = 1024 * 512; // 512KB read limit
+const IMAGE_CACHE_DIR = path.join(os.homedir(), '.prometheus', 'cache', 'images');
 
 function safePath(p: string): string {
   const resolved = path.resolve(WORKSPACE_ROOT, p.replace(/^\/+/, ''));
@@ -144,6 +145,39 @@ export const filesRouter = router({
         sizeFormatted: formatSize(stat.size),
         message: null,
       };
+    }),
+
+  uploadImage: protectedProcedure
+    .input(z.object({
+      data: z.string(), // base64 encoded image data (without data: prefix)
+      mimeType: z.string().default('image/png'),
+      caption: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      // Ensure cache dir exists
+      if (!fs.existsSync(IMAGE_CACHE_DIR)) {
+        fs.mkdirSync(IMAGE_CACHE_DIR, { recursive: true });
+      }
+
+      const extMap: Record<string, string> = {
+        'image/png': '.png',
+        'image/jpeg': '.jpg',
+        'image/gif': '.gif',
+        'image/webp': '.webp',
+        'image/bmp': '.bmp',
+      };
+      const ext = extMap[input.mimeType] ?? '.png';
+      const name = `img_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}${ext}`;
+      const filePath = path.join(IMAGE_CACHE_DIR, name);
+
+      const buffer = Buffer.from(input.data, 'base64');
+      if (buffer.length > 10 * 1024 * 1024) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Image too large (max 10 MB)' });
+      }
+
+      fs.writeFileSync(filePath, buffer);
+
+      return { path: filePath, name, size: buffer.length, sizeFormatted: formatSize(buffer.length) };
     }),
 
   stats: protectedProcedure.query(async () => {
