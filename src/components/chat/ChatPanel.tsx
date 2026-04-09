@@ -10,7 +10,7 @@ import {
   type ReactNode,
   type ErrorInfo,
 } from 'react';
-import { Send, AlertCircle, ImagePlus, X } from 'lucide-react';
+import { Send, AlertCircle, Paperclip, X, FileText, FileSpreadsheet } from 'lucide-react';
 
 function uuid(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -65,22 +65,45 @@ function ChatSkeleton() {
 
 // ─── Image preview ────────────────────────────────────────────────────────────
 
-interface PendingImage {
-  dataUrl: string;    // for preview display
+// Accepted file types for the file picker
+const ACCEPTED_TYPES = [
+  'image/*',
+  '.pdf', '.docx', '.xlsx', '.txt', '.md', '.csv', '.json',
+  '.yaml', '.yml', '.toml', '.py', '.js', '.ts', '.sh', '.sql',
+].join(',');
+
+interface PendingFile {
+  dataUrl: string;    // for preview (images) or empty (docs)
   base64: string;     // raw base64 (no data: prefix)
   mimeType: string;
   name: string;
+  isImage: boolean;
+  size: number;
 }
 
-function ImagePreview({ image, onRemove }: { image: PendingImage; onRemove: () => void }) {
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function FilePreview({ file, onRemove }: { file: PendingFile; onRemove: () => void }) {
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+  const DocIcon = ext === 'xlsx' || ext === 'csv' ? FileSpreadsheet : FileText;
+
   return (
-    <div className="relative inline-block mr-2 mb-2">
-      <img
-        src={image.dataUrl}
-        alt={image.name}
-        className="rounded-md border"
-        style={{ maxHeight: 120, maxWidth: 200, borderColor: '#30363d' }}
-      />
+    <div className="relative inline-flex items-center gap-2 mr-2 mb-2 px-3 py-2 rounded-md border"
+      style={{ background: '#0d1117', borderColor: '#30363d' }}
+    >
+      {file.isImage ? (
+        <img src={file.dataUrl} alt={file.name} className="rounded" style={{ maxHeight: 80, maxWidth: 120 }} />
+      ) : (
+        <DocIcon size={20} style={{ color: '#58a6ff', flexShrink: 0 }} />
+      )}
+      <div className="min-w-0">
+        <p className="text-xs font-medium truncate" style={{ color: '#e6edf3', maxWidth: 150 }}>{file.name}</p>
+        <p className="text-xs" style={{ color: '#8b949e' }}>{formatFileSize(file.size)}</p>
+      </div>
       <button
         onClick={onRemove}
         className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center"
@@ -88,7 +111,6 @@ function ImagePreview({ image, onRemove }: { image: PendingImage; onRemove: () =
       >
         <X size={10} />
       </button>
-      <p className="text-xs mt-0.5 truncate" style={{ color: '#8b949e', maxWidth: 200 }}>{image.name}</p>
     </div>
   );
 }
@@ -101,7 +123,7 @@ interface ChatPanelInnerProps {
 
 function ChatPanelInner({ sessionKey }: ChatPanelInnerProps) {
   const [input, setInput] = useState('');
-  const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
+  const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const [uploading, setUploading] = useState(false);
   const [localMessages, setLocalMessages] = useState<ChatMessage[]>([]);
   const [streamingMessage, setStreamingMessage] = useState<ChatMessage | null>(null);
@@ -130,27 +152,28 @@ function ChatPanelInner({ sessionKey }: ChatPanelInnerProps) {
 
   // Send mutation (via tRPC)
   const sendMutation = api.sessions.send.useMutation();
-  const uploadMutation = api.files.uploadImage.useMutation();
+  // Files are sent directly via WS chat_upload command (no separate HTTP upload needed)
 
   // ─── Image handling ───────────────────────────────────────────────────────
 
   const processFile = useCallback((file: File) => {
-    if (!file.type.startsWith('image/')) return;
-    if (file.size > 10 * 1024 * 1024) {
-      alert('Image too large (max 10 MB)');
+    if (file.size > 20 * 1024 * 1024) {
+      alert('File too large (max 20 MB)');
       return;
     }
 
+    const isImage = file.type.startsWith('image/');
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = reader.result as string;
-      // Extract base64 data after the data:mime;base64, prefix
       const base64 = dataUrl.split(',')[1];
-      setPendingImages(prev => [...prev, {
-        dataUrl,
+      setPendingFiles(prev => [...prev, {
+        dataUrl: isImage ? dataUrl : '',
         base64,
-        mimeType: file.type,
-        name: file.name || 'image.png',
+        mimeType: file.type || 'application/octet-stream',
+        name: file.name || (isImage ? 'image.png' : 'file'),
+        isImage,
+        size: file.size,
       }]);
     };
     reader.readAsDataURL(file);
@@ -178,7 +201,7 @@ function ChatPanelInner({ sessionKey }: ChatPanelInnerProps) {
     const files = e.dataTransfer?.files;
     if (!files) return;
     for (const file of files) {
-      if (file.type.startsWith('image/')) processFile(file);
+      processFile(file);
     }
   }, [processFile]);
 
@@ -197,8 +220,8 @@ function ChatPanelInner({ sessionKey }: ChatPanelInnerProps) {
     e.target.value = '';
   }, [processFile]);
 
-  const removeImage = useCallback((index: number) => {
-    setPendingImages(prev => prev.filter((_, i) => i !== index));
+  const removeFile = useCallback((index: number) => {
+    setPendingFiles(prev => prev.filter((_, i) => i !== index));
   }, []);
 
   // ─── Streaming listener ───────────────────────────────────────────────────
@@ -252,19 +275,21 @@ function ChatPanelInner({ sessionKey }: ChatPanelInnerProps) {
     return [...history, ...localMessages];
   }, [historyData, localMessages]);
 
-  // ─── Send message (with optional images) ──────────────────────────────────
+  // ─── Send message (with optional file attachments) ─────────────────────────
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
-    const images = [...pendingImages];
-    if (!text && images.length === 0) return;
+    const files = [...pendingFiles];
+    if (!text && files.length === 0) return;
     if (uploading) return;
 
-    // Build display content for user message — include image thumbnails
-    const contentParts: Array<{ type: string; text?: string; dataUrl?: string }> = [];
-    if (images.length > 0) {
-      for (const img of images) {
-        contentParts.push({ type: 'image', dataUrl: img.dataUrl });
+    // Build display content for user message — thumbnails for images, icons for docs
+    const contentParts: Array<{ type: string; text?: string; dataUrl?: string; fileName?: string; fileSize?: number }> = [];
+    for (const f of files) {
+      if (f.isImage) {
+        contentParts.push({ type: 'image', dataUrl: f.dataUrl });
+      } else {
+        contentParts.push({ type: 'file', fileName: f.name, fileSize: f.size });
       }
     }
     if (text) {
@@ -280,60 +305,50 @@ function ChatPanelInner({ sessionKey }: ChatPanelInnerProps) {
     };
     setLocalMessages(prev => [...prev, userMsg]);
     setInput('');
-    setPendingImages([]);
+    setPendingFiles([]);
 
-    // Upload images to server cache, collect paths
-    let imagePaths: string[] = [];
-    if (images.length > 0) {
+    const wsConn = ws;
+
+    // Send files via WS chat_upload command (processed server-side by Prometheus)
+    if (files.length > 0 && wsConn && wsConn.readyState === WebSocket.OPEN) {
       setUploading(true);
-      try {
-        const results = await Promise.all(
-          images.map(img =>
-            uploadMutation.mutateAsync({ data: img.base64, mimeType: img.mimeType })
-          )
-        );
-        imagePaths = results.map(r => r.path);
-      } catch (err) {
-        setLocalMessages(prev => [...prev, {
-          role: 'system',
-          content: `Image upload failed: ${(err as Error).message}`,
-        }]);
-        setUploading(false);
-        return;
+      for (const f of files) {
+        wsConn.send(JSON.stringify({
+          type: 'chat_upload',
+          payload: {
+            session_id: sessionKey,
+            filename: f.name,
+            content_base64: f.base64,
+            mime_type: f.mimeType,
+            caption: files.indexOf(f) === files.length - 1 ? text : '',
+          },
+        }));
       }
       setUploading(false);
-    }
-
-    // Build the content string for Prometheus
-    // Format matches Telegram gateway: [Image: /path/to/image]\ncaption
-    let wsContent = text;
-    if (imagePaths.length > 0) {
-      const imageRefs = imagePaths.map(p => `[Image: ${p}]`).join('\n');
-      wsContent = text ? `${imageRefs}\n${text}` : imageRefs;
-    }
-
-    // Send via WebSocket
-    const wsConn = ws;
-    if (wsConn && wsConn.readyState === WebSocket.OPEN) {
-      wsConn.send(JSON.stringify({
-        type: 'send_message',
-        payload: { session_id: sessionKey, content: wsContent },
-      }));
       setStreamingMessage({ role: 'assistant', content: '', streaming: true });
-    } else {
-      sendMutation.mutate(
-        { sessionKey, message: wsContent },
-        {
-          onSuccess: () => {
-            setStreamingMessage({ role: 'assistant', content: '', streaming: true });
+    } else if (text) {
+      // Text-only message
+      if (wsConn && wsConn.readyState === WebSocket.OPEN) {
+        wsConn.send(JSON.stringify({
+          type: 'send_message',
+          payload: { session_id: sessionKey, content: text },
+        }));
+        setStreamingMessage({ role: 'assistant', content: '', streaming: true });
+      } else {
+        sendMutation.mutate(
+          { sessionKey, message: text },
+          {
+            onSuccess: () => {
+              setStreamingMessage({ role: 'assistant', content: '', streaming: true });
+            },
+            onError: (err) => {
+              setLocalMessages(prev => [...prev, { role: 'system', content: `Error: ${err.message}` }]);
+            },
           },
-          onError: (err) => {
-            setLocalMessages(prev => [...prev, { role: 'system', content: `Error: ${err.message}` }]);
-          },
-        },
-      );
+        );
+      }
     }
-  }, [input, pendingImages, uploading, sendMutation, uploadMutation, ws, sessionKey]);
+  }, [input, pendingFiles, uploading, sendMutation, ws, sessionKey]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -345,7 +360,7 @@ function ChatPanelInner({ sessionKey }: ChatPanelInnerProps) {
     [handleSend],
   );
 
-  const canSend = (input.trim() || pendingImages.length > 0) && !uploading;
+  const canSend = (input.trim() || pendingFiles.length > 0) && !uploading;
 
   if (isLoading) return <ChatSkeleton />;
 
@@ -395,11 +410,11 @@ function ChatPanelInner({ sessionKey }: ChatPanelInnerProps) {
         className="border-t p-3 flex-shrink-0"
         style={{ borderColor: '#30363d', background: '#161b22' }}
       >
-        {/* Pending image previews */}
-        {pendingImages.length > 0 && (
+        {/* Pending file previews */}
+        {pendingFiles.length > 0 && (
           <div className="flex flex-wrap px-1 mb-2">
-            {pendingImages.map((img, i) => (
-              <ImagePreview key={i} image={img} onRemove={() => removeImage(i)} />
+            {pendingFiles.map((f, i) => (
+              <FilePreview key={i} file={f} onRemove={() => removeFile(i)} />
             ))}
           </div>
         )}
@@ -408,21 +423,21 @@ function ChatPanelInner({ sessionKey }: ChatPanelInnerProps) {
           className="flex gap-2 rounded-lg p-2 border"
           style={{ background: '#0d1117', borderColor: '#30363d' }}
         >
-          {/* Image upload button */}
+          {/* File attach button */}
           <button
             onClick={() => fileInputRef.current?.click()}
             className="flex items-center justify-center w-8 h-8 rounded-md transition-colors flex-shrink-0 self-end"
             style={{ color: '#8b949e' }}
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#58a6ff'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#8b949e'; }}
-            title="Upload image (or paste from clipboard)"
+            title="Attach file (images, PDF, DOCX, XLSX, code, text)"
           >
-            <ImagePlus size={16} />
+            <Paperclip size={16} />
           </button>
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept={ACCEPTED_TYPES}
             multiple
             className="hidden"
             onChange={handleFileSelect}
@@ -435,7 +450,7 @@ function ChatPanelInner({ sessionKey }: ChatPanelInnerProps) {
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            placeholder="Message… (⌘+Enter to send, paste images)"
+            placeholder="Message… (⌘+Enter to send, paste images, drop files)"
             rows={1}
             className="flex-1 resize-none bg-transparent text-sm outline-none placeholder:text-[#8b949e]"
             style={{ color: '#e6edf3', maxHeight: '120px', overflowY: 'auto' }}
@@ -460,7 +475,7 @@ function ChatPanelInner({ sessionKey }: ChatPanelInnerProps) {
           </button>
         </div>
         <p className="text-xs mt-1 px-1" style={{ color: '#30363d' }}>
-          {uploading ? 'Uploading image...' : '⌘+Enter to send · paste or drag images'}
+          {uploading ? 'Uploading...' : '⌘+Enter to send · paste images · drop files'}
         </p>
       </div>
     </div>

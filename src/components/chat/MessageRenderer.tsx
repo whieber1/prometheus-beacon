@@ -14,6 +14,8 @@ interface ContentPart {
   content?: unknown;
   isError?: boolean;
   dataUrl?: string;  // for inline image thumbnails
+  fileName?: string; // for document attachments
+  fileSize?: number;
 }
 
 interface ChatMessage {
@@ -354,6 +356,15 @@ export const MessageRenderer = memo(function MessageRenderer({
                 className="rounded-md my-1"
                 style={{ maxHeight: 200, maxWidth: 300, border: '1px solid rgba(255,255,255,0.1)' }}
               />
+            );
+          }
+          if (part.type === 'file' && part.fileName) {
+            return (
+              <div key={i} className="flex items-center gap-2 my-1 px-2 py-1.5 rounded-md" style={{ background: 'rgba(255,255,255,0.05)' }}>
+                <span className="text-xs" style={{ color: '#58a6ff' }}>📎</span>
+                <span className="text-xs font-medium" style={{ color: '#e6edf3' }}>{part.fileName}</span>
+                {part.fileSize && <span className="text-xs" style={{ color: '#8b949e' }}>({(part.fileSize / 1024).toFixed(0)} KB)</span>}
+              </div>
             );
           }
           if (part.type === 'text' && part.text !== undefined) {
