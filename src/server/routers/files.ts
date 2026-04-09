@@ -5,7 +5,7 @@ import os from 'os';
 import { router, protectedProcedure } from '../trpc';
 import { TRPCError } from '@trpc/server';
 
-const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT ?? path.join(os.homedir(), '.prometheus', 'workspace');
+const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT ?? path.join(os.homedir(), '.prometheus');
 const MAX_FILE_SIZE = 1024 * 512; // 512KB read limit
 
 function safePath(p: string): string {
@@ -93,7 +93,7 @@ export const filesRouter = router({
       // Build breadcrumb
       const parts = input.dir ? input.dir.split('/').filter(Boolean) : [];
       const breadcrumb = [
-        { name: 'workspace', path: '' },
+        { name: 'prometheus', path: '' },
         ...parts.map((p, i) => ({ name: p, path: parts.slice(0, i + 1).join('/') })),
       ];
 

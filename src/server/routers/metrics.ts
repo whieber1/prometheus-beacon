@@ -2,7 +2,9 @@ import { router, protectedProcedure } from '../trpc';
 import { getGatewayBridge } from '../gateway/bridge';
 import { SessionsListResponseSchema } from '../gateway/types';
 import os from 'os';
+import path from 'path';
 import fs from 'fs';
+import Database from 'better-sqlite3';
 
 export const metricsRouter = router({
   sessions: protectedProcedure.query(async () => {
@@ -83,6 +85,46 @@ export const metricsRouter = router({
         .sort((a, b) => (b.totalTokens) - (a.totalTokens))
         .slice(0, 20),
     };
+  }),
+
+  toolCallHistory: protectedProcedure.query(async () => {
+    const telemetryPath = path.join(os.homedir(), '.prometheus', 'telemetry.db');
+    if (!fs.existsSync(telemetryPath)) {
+      return { calls: [], total: 0 };
+    }
+    try {
+      const db = new Database(telemetryPath, { readonly: true });
+      const rows = db.prepare(
+        `SELECT id, timestamp, model, tool_name, success, retries, latency_ms, error_type, error_detail
+         FROM tool_calls
+         WHERE tool_name IS NOT NULL AND tool_name != '' AND tool_name != '_loop_transition'
+         ORDER BY timestamp DESC
+         LIMIT 200`
+      ).all() as Array<{
+        id: number;
+        timestamp: number;
+        model: string;
+        tool_name: string;
+        success: number;
+        retries: number;
+        latency_ms: number;
+        error_type: string | null;
+        error_detail: string | null;
+      }>;
+      db.close();
+
+      const calls = rows.map((r) => ({
+        call_id: `hist-${r.id}`,
+        tool_name: r.tool_name,
+        success: r.success === 1,
+        error: r.error_detail || r.error_type || undefined,
+        latency_ms: r.latency_ms || 0,
+        started_at: r.timestamp,
+      }));
+      return { calls, total: calls.length };
+    } catch {
+      return { calls: [], total: 0 };
+    }
   }),
 
   system: protectedProcedure.query(async () => {

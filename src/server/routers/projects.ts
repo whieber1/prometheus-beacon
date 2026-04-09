@@ -4,6 +4,9 @@ import { projects, stories } from '../db/schema';
 import { eq, asc } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { getGatewayBridge } from '../gateway/bridge';
+import { TRPCError } from '@trpc/server';
+
+const PROMETHEUS_API = process.env.PROMETHEUS_API_URL ?? 'http://localhost:8005';
 
 const storiesRouter = router({
   list: protectedProcedure
@@ -95,7 +98,7 @@ const storiesRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const [story] = await ctx.db.select().from(stories).where(eq(stories.id, input.id)).limit(1);
-      if (!story) throw new Error('Story not found');
+      if (!story) throw new TRPCError({ code: 'NOT_FOUND', message: 'Story not found' });
 
       const taskMessage = [
         `**Task: ${story.title}**`,
@@ -103,12 +106,42 @@ const storiesRouter = router({
         `\n_Task ID: ${story.storyId}_`,
       ].filter(Boolean).join('');
 
-      const bridge = getGatewayBridge();
-      await bridge.request('chat.send', {
-        sessionKey: input.sessionKey,
-        message: taskMessage,
-        idempotencyKey: randomUUID(),
-      });
+      let sent = false;
+
+      // Try 1: Prometheus REST API
+      // TODO(python-side): Expose POST /api/chat/send { session_id, message }
+      try {
+        const res = await fetch(`${PROMETHEUS_API}/api/chat/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            session_id: input.sessionKey,
+            message: taskMessage,
+          }),
+          signal: AbortSignal.timeout(5000),
+        });
+        if (res.ok) sent = true;
+      } catch { /* REST not available, try bridge */ }
+
+      // Try 2: OpenClaw gateway bridge protocol
+      if (!sent) {
+        try {
+          const bridge = getGatewayBridge();
+          await bridge.request('chat.send', {
+            sessionKey: input.sessionKey,
+            message: taskMessage,
+            idempotencyKey: randomUUID(),
+          });
+          sent = true;
+        } catch { /* bridge not available */ }
+      }
+
+      if (!sent) {
+        throw new TRPCError({
+          code: 'SERVICE_UNAVAILABLE',
+          message: 'Could not send task to agent — Prometheus bridge unavailable. The task has NOT been dispatched.',
+        });
+      }
 
       const now = new Date();
       await ctx.db.update(stories).set({

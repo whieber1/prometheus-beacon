@@ -14,11 +14,13 @@ import {
   Wifi,
   WifiOff,
   Server,
+  MessageCircle,
 } from 'lucide-react';
 import { useGatewayStore } from '@/lib/stores/gateway-store';
 
 const NAV_ITEMS = [
-  { label: 'Tool Calls', href: '/projects', icon: FolderKanban },
+  { label: 'Chat', href: '/chat', icon: MessageCircle },
+  { label: 'Projects', href: '/projects', icon: FolderKanban },
   { label: 'Agent Status', href: '/agents', icon: Bot },
   { label: 'Sessions', href: '/sessions', icon: Terminal },
   { label: 'Metrics', href: '/metrics', icon: BarChart3 },
