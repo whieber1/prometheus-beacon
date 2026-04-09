@@ -12,6 +12,7 @@ import { api } from '@/lib/trpc';
 function useInitialData() {
   const seededSessions = useRef(false);
   const seededTelemetry = useRef(false);
+  const seededStatus = useRef(false);
 
   // Fetch sessions from tRPC (which hits Python REST /api/sessions)
   const { data: sessionsData } = api.sessions.list.useQuery(undefined, {
@@ -71,6 +72,28 @@ function useInitialData() {
       }
     }
   }, [telemetryData]);
+
+  // Fetch agent status from REST /api/status
+  const { data: statusData } = api.metrics.agentStatus.useQuery(undefined, {
+    refetchOnWindowFocus: false,
+    retry: 1,
+  });
+
+  useEffect(() => {
+    if (statusData && !seededStatus.current) {
+      seededStatus.current = true;
+      const store = useGatewayStore.getState();
+      if (!store.prometheusStatus) {
+        store.setPrometheusStatus({
+          state: (statusData.state as 'idle' | 'thinking' | 'running' | 'dreaming' | 'errored') || 'idle',
+          model: statusData.model || 'unknown',
+          provider: statusData.provider || 'unknown',
+          profile: statusData.profile || 'full',
+          uptime_seconds: statusData.uptime_seconds || 0,
+        });
+      }
+    }
+  }, [statusData]);
 }
 
 /**

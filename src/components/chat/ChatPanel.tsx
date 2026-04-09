@@ -116,10 +116,16 @@ function ChatPanelInner({ sessionKey }: ChatPanelInnerProps) {
     [pendingApprovals, sessionKey],
   );
 
-  // Load history
+  // Load history once — disable all automatic refetching to prevent scroll jumps
+  // and thumbnail disappearing. New messages come via WS, not polling.
   const { data: historyData, isLoading, error } = api.sessions.history.useQuery(
     { sessionKey, limit: 100 },
-    { refetchOnWindowFocus: false },
+    {
+      refetchOnWindowFocus: false,
+      refetchOnMount: false,
+      refetchOnReconnect: false,
+      staleTime: Infinity,
+    },
   );
 
   // Send mutation (via tRPC)
@@ -226,10 +232,19 @@ function ChatPanelInner({ sessionKey }: ChatPanelInnerProps) {
     return () => unsub();
   }, [sessionKey]);
 
-  // Scroll to bottom
+  // Scroll to bottom — only on new local messages or streaming, not history refetches
+  const scrollTrigger = localMessages.length + (streamingMessage ? 1 : 0);
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [localMessages, streamingMessage, historyData]);
+  }, [scrollTrigger]);
+  // Also scroll once when history first loads
+  const historyLoaded = useRef(false);
+  useEffect(() => {
+    if (historyData && !historyLoaded.current) {
+      historyLoaded.current = true;
+      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'auto' }), 50);
+    }
+  }, [historyData]);
 
   // Merge history with local messages
   const allMessages: ChatMessage[] = useMemo(() => {
@@ -245,12 +260,21 @@ function ChatPanelInner({ sessionKey }: ChatPanelInnerProps) {
     if (!text && images.length === 0) return;
     if (uploading) return;
 
-    // Build display content for user message
+    // Build display content for user message — include image thumbnails
+    const contentParts: Array<{ type: string; text?: string; dataUrl?: string }> = [];
+    if (images.length > 0) {
+      for (const img of images) {
+        contentParts.push({ type: 'image', dataUrl: img.dataUrl });
+      }
+    }
+    if (text) {
+      contentParts.push({ type: 'text', text });
+    }
     const userMsg: ChatMessage = {
       role: 'user',
-      content: images.length > 0
-        ? (text ? `${text}\n[${images.length} image${images.length > 1 ? 's' : ''} attached]` : `[${images.length} image${images.length > 1 ? 's' : ''} attached]`)
-        : text,
+      content: contentParts.length === 1 && contentParts[0].type === 'text'
+        ? text
+        : contentParts as unknown as ChatMessage['content'],
       id: uuid(),
       createdAt: Date.now(),
     };

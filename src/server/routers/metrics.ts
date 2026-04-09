@@ -6,7 +6,28 @@ import path from 'path';
 import fs from 'fs';
 import Database from 'better-sqlite3';
 
+const PROMETHEUS_API = process.env.PROMETHEUS_API_URL ?? 'http://localhost:8005';
+
 export const metricsRouter = router({
+  agentStatus: protectedProcedure.query(async () => {
+    try {
+      const res = await fetch(`${PROMETHEUS_API}/api/status`, {
+        signal: AbortSignal.timeout(3000),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as {
+          state: string;
+          model: string;
+          provider: string;
+          profile: string;
+          uptime_seconds: number;
+        };
+        return data;
+      }
+    } catch { /* REST unavailable */ }
+    return null;
+  }),
+
   sessions: protectedProcedure.query(async () => {
     const bridge = getGatewayBridge();
     const result = await bridge.request<unknown>('sessions.list', {});

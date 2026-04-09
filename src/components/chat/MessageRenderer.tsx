@@ -13,6 +13,7 @@ interface ContentPart {
   toolCallId?: string;
   content?: unknown;
   isError?: boolean;
+  dataUrl?: string;  // for inline image thumbnails
 }
 
 interface ChatMessage {
@@ -344,6 +345,17 @@ export const MessageRenderer = memo(function MessageRenderer({
           </div>
         )}
         {parts.map((part, i) => {
+          if (part.type === 'image' && part.dataUrl) {
+            return (
+              <img
+                key={i}
+                src={part.dataUrl}
+                alt="Attached image"
+                className="rounded-md my-1"
+                style={{ maxHeight: 200, maxWidth: 300, border: '1px solid rgba(255,255,255,0.1)' }}
+              />
+            );
+          }
           if (part.type === 'text' && part.text !== undefined) {
             return (
               <React.Fragment key={i}>
